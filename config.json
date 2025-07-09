@@ -1,0 +1,12 @@
+{
+  "bot_token": "YOUR_BOT_TOKEN_HERE",
+  "guild_id": "YOUR_GUILD_ID_HERE",
+  "log_channel_id": "YOUR_LOG_CHANNEL_ID_HERE",
+  "status_roles": [
+    {
+      "status_text": "discord.gg/maharlika",
+      "role_id": "YOUR_ROLE_ID_HERE",
+      "case_sensitive": false
+    }
+  ]
+}
