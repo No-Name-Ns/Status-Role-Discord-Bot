@@ -71,10 +71,20 @@ class StatusRoleBot(commands.Bot):
             if not config[key]:
                 raise ValueError(f"Missing required field: {key}")
 
+        if not config["status_roles"][0]["role_id"]:
+            raise ValueError("Missing required field: ROLE_ID")
+
         return config
 
     async def on_ready(self):
         logger.info(f'{self.user} has connected to Discord!')
+
+        guild = self.get_guild(int(self.config['guild_id']))
+        if not guild:
+            logger.error(f"Guild with ID {self.config['guild_id']} not found!")
+            return
+
+        logger.info(f"Bot is monitoring guild: {guild.name}")
 
     def get_member_status_text(self, member: discord.Member) -> Optional[str]:
         if not member.activities:
@@ -83,42 +93,161 @@ class StatusRoleBot(commands.Bot):
         for activity in member.activities:
             if isinstance(activity, discord.CustomActivity) and activity.name:
                 return activity.name
+            elif hasattr(activity, 'state') and activity.state:
+                return activity.state
+
         return None
 
-    def status_matches(self, status_text: str, target: str) -> bool:
-        return target.lower() in status_text.lower()
+    def get_member_all_text(self, member: discord.Member) -> List[str]:
+        texts = []
 
-    async def send_thank_you(self, member):
-        channel = self.get_channel(int(self.config['thank_message_channel']))
-        if channel:
-            await channel.send(f"{member.mention} thank you for supporting the server!")
+        if member.activities:
+            for activity in member.activities:
+                if isinstance(activity, discord.CustomActivity) and activity.name:
+                    texts.append(activity.name)
+                elif hasattr(activity, 'state') and activity.state:
+                    texts.append(activity.state)
+                elif hasattr(activity, 'details') and activity.details:
+                    texts.append(activity.details)
+                elif hasattr(activity, 'name') and activity.name:
+                    texts.append(activity.name)
 
-    async def on_presence_update(self, before, after):
+        if member.display_name and member.display_name != member.name:
+            texts.append(member.display_name)
+
+        texts.append(member.name)
+        return texts
+
+    def check_member_text_match(self, member: discord.Member, status_config: dict) -> bool:
+        all_texts = self.get_member_all_text(member)
+        for text in all_texts:
+            if text and self.status_matches(text, status_config):
+                return True
+        return False
+
+    def status_matches(self, status_text: str, status_config: dict) -> bool:
+        target_text = status_config['status_text']
+        case_sensitive = status_config.get('case_sensitive', False)
+
+        if not case_sensitive:
+            return target_text.lower() in status_text.lower()
+        return target_text in status_text
+
+    async def send_log_message(self, message: str):
+        try:
+            channel = self.get_channel(int(self.config['log_channel_id']))
+            if channel:
+                await channel.send(message)
+            else:
+                logger.error("Log channel not found!")
+        except Exception as e:
+            logger.error(f"Error sending log message: {e}")
+
+    async def send_thank_you_message(self, member: discord.Member):
+        try:
+            channel = self.get_channel(int(self.config['thank_message_channel']))
+            if channel:
+                await channel.send(f"{member.mention} thank you for supporting the server!")
+            else:
+                logger.error("Thank message channel not found!")
+        except Exception as e:
+            logger.error(f"Error sending thank you message: {e}")
+
+    async def on_presence_update(self, before: discord.Member, after: discord.Member):
         if after.bot:
             return
 
-        if after.guild.id != int(self.config['guild_id']):
+        guild = after.guild
+        if guild.id != int(self.config['guild_id']):
             return
 
-        role_id = int(self.config['status_roles'][0]['role_id'])
-        target_text = self.config['status_roles'][0]['status_text']
+        current_status = self.get_member_status_text(after)
+        previous_status = self.user_status_cache.get(after.id)
 
-        role = after.guild.get_role(role_id)
-        if not role:
+        if current_status:
+            self.user_status_cache[after.id] = current_status
+        elif after.id in self.user_status_cache:
+            del self.user_status_cache[after.id]
+
+        for status_config in self.config['status_roles']:
+            role = guild.get_role(int(status_config['role_id']))
+            if not role:
+                logger.error(f"Role with ID {status_config['role_id']} not found!")
+                continue
+
+            has_role = role in after.roles
+            should_have_role = self.check_member_text_match(after, status_config)
+
+            if should_have_role and not has_role:
+                try:
+                    await after.add_roles(role)
+
+                    await self.send_log_message(
+                        f"✅ **{after.display_name}** set their status/activity/profile to contain `{status_config['status_text']}` and received the **{role.name}** role!"
+                    )
+
+                    await self.send_thank_you_message(after)
+                    logger.info(f"Added role {role.name} to {after.display_name}")
+
+                except discord.Forbidden:
+                    logger.error(f"No permission to add role {role.name} to {after.display_name}")
+                except Exception as e:
+                    logger.error(f"Error adding role to {after.display_name}: {e}")
+
+            elif not should_have_role and has_role:
+                try:
+                    await after.remove_roles(role)
+                    logger.info(f"Removed role {role.name} from {after.display_name}")
+                except discord.Forbidden:
+                    logger.error(f"No permission to remove role {role.name} from {after.display_name}")
+                except Exception as e:
+                    logger.error(f"Error removing role from {after.display_name}: {e}")
+
+    async def on_member_update(self, before: discord.Member, after: discord.Member):
+        if after.bot:
             return
 
-        status = self.get_member_status_text(after)
-        has_role = role in after.roles
-        match = status and self.status_matches(status, target_text)
+        guild = after.guild
+        if guild.id != int(self.config['guild_id']):
+            return
 
-        if match and not has_role:
-            await after.add_roles(role)
-            await self.send_thank_you(after)
-            logger.info(f"Gave role to {after.display_name}")
+        for status_config in self.config['status_roles']:
+            role = guild.get_role(int(status_config['role_id']))
+            if not role:
+                continue
 
-        elif not match and has_role:
-            await after.remove_roles(role)
-            logger.info(f"Removed role from {after.display_name}")  # no message sent
+            has_role = role in after.roles
+            should_have_role = self.check_member_text_match(after, status_config)
+
+            if should_have_role and not has_role:
+                try:
+                    await after.add_roles(role)
+
+                    await self.send_log_message(
+                        f"✅ **{after.display_name}** updated their profile to contain `{status_config['status_text']}` and received the **{role.name}** role!"
+                    )
+
+                    await self.send_thank_you_message(after)
+                    logger.info(f"Added role {role.name} to {after.display_name} (profile update)")
+
+                except discord.Forbidden:
+                    logger.error(f"No permission to add role {role.name} to {after.display_name}")
+                except Exception as e:
+                    logger.error(f"Error adding role to {after.display_name}: {e}")
+
+            elif not should_have_role and has_role:
+                try:
+                    await after.remove_roles(role)
+                    logger.info(f"Removed role {role.name} from {after.display_name} (profile update)")
+                except discord.Forbidden:
+                    logger.error(f"No permission to remove role {role.name} from {after.display_name}")
+                except Exception as e:
+                    logger.error(f"Error removing role from {after.display_name}: {e}")
+
+    async def on_command_error(self, ctx, error):
+        if isinstance(error, commands.CommandNotFound):
+            return
+
 
 bot = StatusRoleBot()
 
