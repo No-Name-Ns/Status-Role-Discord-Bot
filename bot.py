@@ -60,7 +60,7 @@ class StatusRoleBot(commands.Bot):
             "thank_message_channel": os.getenv("THANK_MESSAGE_CHANNEL"),
             "status_roles": [
                 {
-                    "status_text": os.getenv("STATUS_TEXT", ".gg/detention"),
+                    "status_text": os.getenv("STATUS_TEXT", ".gg/t33n"),
                     "role_id": os.getenv("ROLE_ID"),
                     "case_sensitive": False
                 }
@@ -253,3 +253,4 @@ bot = StatusRoleBot()
 
 if __name__ == "__main__":
     bot.run(bot.config['bot_token'])
+
