@@ -143,17 +143,6 @@ class StatusRoleBot(commands.Bot):
         except Exception as e:
             logger.error(f"Error sending log message: {e}")
 
-    async def send_thank_you_message(self, member: discord.Member):
-        try:
-            channel = self.get_channel(int(self.config['thank_message_channel']))
-            if channel:
-                # Removed @mention here
-                await channel.send("Thank you for supporting the server!")
-            else:
-                logger.error("Thank message channel not found!")
-        except Exception as e:
-            logger.error(f"Error sending thank you message: {e}")
-
     async def on_presence_update(self, before: discord.Member, after: discord.Member):
         if after.bot:
             return
@@ -187,7 +176,6 @@ class StatusRoleBot(commands.Bot):
                         f"✅ **{after.display_name}** set their status/activity/profile to contain `{status_config['status_text']}` and received the **{role.name}** role!"
                     )
 
-                    await self.send_thank_you_message(after)
                     logger.info(f"Added role {role.name} to {after.display_name}")
 
                 except discord.Forbidden:
@@ -228,7 +216,6 @@ class StatusRoleBot(commands.Bot):
                         f"✅ **{after.display_name}** updated their profile to contain `{status_config['status_text']}` and received the **{role.name}** role!"
                     )
 
-                    await self.send_thank_you_message(after)
                     logger.info(f"Added role {role.name} to {after.display_name} (profile update)")
 
                 except discord.Forbidden:
@@ -249,11 +236,6 @@ class StatusRoleBot(commands.Bot):
         if isinstance(error, commands.CommandNotFound):
             return
 
-
-bot = StatusRoleBot()
-
-if __name__ == "__main__":
-    bot.run(bot.config['bot_token'])
 
 bot = StatusRoleBot()
 
