@@ -147,7 +147,8 @@ class StatusRoleBot(commands.Bot):
         try:
             channel = self.get_channel(int(self.config['thank_message_channel']))
             if channel:
-                await channel.send(f"{member.mention} thank you for supporting the server!")
+                # Removed @mention here
+                await channel.send("Thank you for supporting the server!")
             else:
                 logger.error("Thank message channel not found!")
         except Exception as e:
@@ -258,4 +259,3 @@ bot = StatusRoleBot()
 
 if __name__ == "__main__":
     bot.run(bot.config['bot_token'])
-
